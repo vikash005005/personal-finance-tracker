@@ -132,6 +132,25 @@ export const ReportsPage = () => {
     );
   }, [filteredTxs]);
 
+  const paymentMethodBreakdown = useMemo(() => {
+    const map = {};
+    let total = 0;
+    filteredTxs.forEach((tx) => {
+      const pm = tx.paymentMethod || 'Other';
+      const val = Number(tx.amount) || 0;
+      map[pm] = (map[pm] || 0) + val;
+      total += val;
+    });
+
+    return Object.entries(map)
+      .map(([method, amount]) => ({
+        method,
+        amount,
+        percent: total > 0 ? Math.round((amount / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [filteredTxs]);
+
   const axisColor = isDark ? '#64748b' : '#94a3b8';
   const gridColor = isDark ? '#1e293b' : '#f1f5f9';
   const tooltipBg = isDark ? '#090d16' : '#ffffff';
@@ -340,6 +359,38 @@ export const ReportsPage = () => {
               })}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Payment Method Distribution */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-subtle space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+            Volume by Payment Channel
+          </h3>
+          <span className="text-xs text-slate-400">Total inflow & outflow settlement</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {paymentMethodBreakdown.map((pm) => (
+            <div
+              key={pm.method}
+              className="p-3 bg-slate-50 dark:bg-slate-850/60 rounded-lg border border-slate-100 dark:border-slate-800 space-y-1"
+            >
+              <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{pm.method}</span>
+                <span className="font-mono">{pm.percent}%</span>
+              </div>
+              <p className="text-xs font-mono font-bold text-slate-900 dark:text-white truncate">
+                {formatAmount(pm.amount)}
+              </p>
+              <div className="w-full bg-slate-200 dark:bg-slate-700 h-1 rounded-full overflow-hidden">
+                <div
+                  className="bg-slate-900 dark:bg-slate-300 h-full rounded-full"
+                  style={{ width: `${pm.percent}%` }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

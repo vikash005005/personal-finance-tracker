@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { CATEGORIES, PAYMENT_METHODS } from '../constants/initialData';
 import { CURRENCIES } from '../constants/currencies';
@@ -6,60 +6,53 @@ import { useLanguage } from '../context/LanguageContext';
 import { useFinance } from '../context/FinanceContext';
 import { useToast } from '../context/ToastContext';
 
-export const TransactionModal = ({
-  isOpen,
-  onClose,
-  transactionToEdit = null,
-}) => {
+export const RecurringModal = ({ isOpen, onClose, ruleToEdit = null }) => {
   const { t } = useLanguage();
-  const { addTransaction, updateTransaction, addRecurringRule, currency } = useFinance();
+  const { addRecurringRule, updateRecurringRule, currency } = useFinance();
   const { showToast } = useToast();
 
   const [type, setType] = useState('expense');
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('Food');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [category, setCategory] = useState('Rent');
+  const [paymentMethod, setPaymentMethod] = useState('Bank Transfer');
+  const [frequency, setFrequency] = useState('monthly');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState('');
   const [description, setDescription] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('UPI');
-  const [recurringFreq, setRecurringFreq] = useState('none');
-  const [recurringStartDate, setRecurringStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [recurringEndDate, setRecurringEndDate] = useState('');
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
-    if (transactionToEdit) {
-      setType(transactionToEdit.type || 'expense');
-      setTitle(transactionToEdit.title || '');
-      setAmount(transactionToEdit.amount || '');
-      setCategory(transactionToEdit.category || 'Food');
-      setDate(transactionToEdit.date || new Date().toISOString().split('T')[0]);
-      setDescription(transactionToEdit.description || '');
-      setPaymentMethod(transactionToEdit.paymentMethod || 'UPI');
-      setRecurringFreq('none');
-      setRecurringStartDate(transactionToEdit.date || new Date().toISOString().split('T')[0]);
-      setRecurringEndDate('');
+    if (ruleToEdit) {
+      setType(ruleToEdit.type || 'expense');
+      setTitle(ruleToEdit.title || '');
+      setAmount(ruleToEdit.amount || '');
+      setCategory(ruleToEdit.category || 'Rent');
+      setPaymentMethod(ruleToEdit.paymentMethod || 'Bank Transfer');
+      setFrequency(ruleToEdit.frequency || 'monthly');
+      setStartDate(ruleToEdit.startDate || new Date().toISOString().split('T')[0]);
+      setEndDate(ruleToEdit.endDate || '');
+      setDescription(ruleToEdit.description || '');
     } else {
       setType('expense');
       setTitle('');
       setAmount('');
-      setCategory('Food');
-      setDate(new Date().toISOString().split('T')[0]);
+      setCategory('Rent');
+      setPaymentMethod('Bank Transfer');
+      setFrequency('monthly');
+      setStartDate(new Date().toISOString().split('T')[0]);
+      setEndDate('');
       setDescription('');
-      setPaymentMethod('UPI');
-      setRecurringFreq('none');
-      setRecurringStartDate(new Date().toISOString().split('T')[0]);
-      setRecurringEndDate('');
     }
     setErrors({});
-  }, [transactionToEdit, isOpen]);
+  }, [ruleToEdit, isOpen]);
 
   const handleTypeChange = (newType) => {
     setType(newType);
     if (newType === 'income' && category !== 'Salary' && category !== 'Freelancing' && category !== 'Investments') {
       setCategory('Salary');
     } else if (newType === 'expense' && (category === 'Salary' || category === 'Freelancing' || category === 'Investments')) {
-      setCategory('Food');
+      setCategory('Rent');
     }
   };
 
@@ -67,7 +60,7 @@ export const TransactionModal = ({
     const errs = {};
     if (!title.trim()) errs.title = 'Title / description is required';
     if (!amount || Number(amount) <= 0) errs.amount = 'Valid positive amount is required';
-    if (!date) errs.date = 'Date is required';
+    if (!startDate) errs.startDate = 'Start date is required';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -81,31 +74,19 @@ export const TransactionModal = ({
       title: title.trim(),
       amount: parseFloat(amount),
       category,
-      date,
-      description: description.trim(),
       paymentMethod,
+      frequency,
+      startDate,
+      endDate: endDate || null,
+      description: description.trim(),
     };
 
-    if (transactionToEdit) {
-      updateTransaction(transactionToEdit.id, payload);
-      showToast('Record updated successfully', 'success');
+    if (ruleToEdit) {
+      updateRecurringRule(ruleToEdit.id, payload);
+      showToast('Recurring rule updated', 'success');
     } else {
-      addTransaction(payload);
-      if (recurringFreq !== 'none') {
-        addRecurringRule({
-          title: title.trim(),
-          amount: parseFloat(amount),
-          type,
-          category,
-          paymentMethod,
-          frequency: recurringFreq,
-          startDate: recurringStartDate || date,
-          endDate: recurringEndDate || null,
-          isActive: true,
-          description: description.trim(),
-        });
-      }
-      showToast('New transaction recorded', 'success');
+      addRecurringRule(payload);
+      showToast('New recurring rule established', 'success');
     }
 
     onClose();
@@ -121,14 +102,14 @@ export const TransactionModal = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={transactionToEdit ? t('editTransaction') : t('addTransaction')}
+      title={ruleToEdit ? t('editRecurring') : t('addRecurring')}
       maxWidth="max-w-md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Segmented Type Toggle */}
+        {/* Type Toggle */}
         <div>
           <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-            Transaction Direction
+            Direction
           </label>
           <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg">
             <button
@@ -140,7 +121,7 @@ export const TransactionModal = ({
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Debit (Outflow)
+              Expense Rule
             </button>
             <button
               type="button"
@@ -151,7 +132,7 @@ export const TransactionModal = ({
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              Credit (Inflow)
+              Income Rule
             </button>
           </div>
         </div>
@@ -159,19 +140,19 @@ export const TransactionModal = ({
         {/* Title */}
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            Merchant / Description *
+            Rule Name / Merchant *
           </label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Swiggy, TCS Ltd, Blinkit, BESCOM"
+            placeholder="e.g. Monthly Rent, Salary, Netflix, SIP"
             className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400"
           />
           {errors.title && <p className="text-[11px] text-rose-500 mt-0.5">{errors.title}</p>}
         </div>
 
-        {/* Amount & Category */}
+        {/* Amount & Frequency */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -196,6 +177,25 @@ export const TransactionModal = ({
 
           <div>
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              {t('frequency')} *
+            </label>
+            <select
+              value={frequency}
+              onChange={(e) => setFrequency(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400"
+            >
+              <option value="daily">{t('recDaily')}</option>
+              <option value="weekly">{t('recWeekly')}</option>
+              <option value="monthly">{t('recMonthly')}</option>
+              <option value="yearly">{t('recYearly')}</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Category & Payment Method */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
               Category *
             </label>
             <select
@@ -209,22 +209,6 @@ export const TransactionModal = ({
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-
-        {/* Date & Payment Method */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-              Transaction Date *
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400 font-mono"
-            />
-            {errors.date && <p className="text-[11px] text-rose-500 mt-0.5">{errors.date}</p>}
           </div>
 
           <div>
@@ -243,68 +227,47 @@ export const TransactionModal = ({
           </div>
         </div>
 
+        {/* Start Date & End Date */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              {t('recStartDate')} *
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400 font-mono"
+            />
+            {errors.startDate && <p className="text-[11px] text-rose-500 mt-0.5">{errors.startDate}</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              {t('recEndDate')}
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400 font-mono"
+            />
+          </div>
+        </div>
+
         {/* Notes */}
         <div>
           <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-            Payment Notes / Reference ID
+            Description
           </label>
           <textarea
             rows="2"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="UPI reference, payment purpose, or invoice number..."
+            placeholder="Account details, contract notes, or reference..."
             className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400"
           />
         </div>
-
-        {/* Recurring Transaction Section */}
-        {!transactionToEdit && (
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                {t('recurringTransactions')}
-              </label>
-              <select
-                value={recurringFreq}
-                onChange={(e) => setRecurringFreq(e.target.value)}
-                className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400"
-              >
-                <option value="none">No (One-time)</option>
-                <option value="daily">{t('recDaily')}</option>
-                <option value="weekly">{t('recWeekly')}</option>
-                <option value="monthly">{t('recMonthly')}</option>
-                <option value="yearly">{t('recYearly')}</option>
-              </select>
-            </div>
-
-            {recurringFreq !== 'none' && (
-              <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-50 dark:bg-slate-850/60 rounded-lg border border-slate-200 dark:border-slate-800 text-xs">
-                <div>
-                  <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
-                    {t('recStartDate')}
-                  </label>
-                  <input
-                    type="date"
-                    value={recurringStartDate}
-                    onChange={(e) => setRecurringStartDate(e.target.value)}
-                    className="w-full px-2 py-1 text-xs font-mono rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 dark:text-slate-400 mb-1">
-                    {t('recEndDate')}
-                  </label>
-                  <input
-                    type="date"
-                    value={recurringEndDate}
-                    onChange={(e) => setRecurringEndDate(e.target.value)}
-                    className="w-full px-2 py-1 text-xs font-mono rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Actions */}
         <div className="mt-5 flex items-center justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -319,7 +282,7 @@ export const TransactionModal = ({
             type="submit"
             className="px-4 py-1.5 text-xs font-semibold text-white dark:text-slate-900 bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white rounded-lg shadow-subtle transition-colors"
           >
-            {transactionToEdit ? t('saveChanges') : t('addTransaction')}
+            {ruleToEdit ? t('saveChanges') : t('addRecurring')}
           </button>
         </div>
       </form>

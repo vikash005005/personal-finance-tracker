@@ -16,6 +16,7 @@ import { BudgetPage } from './pages/BudgetPage';
 import { SavingsGoalsPage } from './pages/SavingsGoalsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { RecurringPage } from './pages/RecurringPage';
 
 export function App() {
   return (
@@ -35,6 +36,7 @@ export function App() {
                   <Route element={<AppLayout />}>
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/transactions" element={<TransactionsPage />} />
+                    <Route path="/recurring" element={<RecurringPage />} />
                     <Route path="/budget" element={<BudgetPage />} />
                     <Route path="/savings-goals" element={<SavingsGoalsPage />} />
                     <Route path="/reports" element={<ReportsPage />} />

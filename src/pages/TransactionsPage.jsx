@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+﻿import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -10,13 +10,19 @@ import {
   Receipt,
   X,
   SlidersHorizontal,
+  Calendar as CalendarIcon,
+  List,
+  RotateCcw,
+  CreditCard,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useToast } from '../context/ToastContext';
-import { CATEGORIES } from '../constants/initialData';
+import { CATEGORIES, PAYMENT_METHODS } from '../constants/initialData';
 import { TransactionModal } from '../components/TransactionModal';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { TransactionCalendar } from '../components/TransactionCalendar';
+import { AdvancedFilterDrawer } from '../components/AdvancedFilterDrawer';
 import { formatDateDisplay } from '../utils/formatters';
 import { exportTransactionsToCsv } from '../utils/exportCsv';
 
@@ -30,12 +36,25 @@ export const TransactionsPage = () => {
   const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // View Mode: 'list' | 'calendar'
+  const [viewMode, setViewMode] = useState('list');
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+
   // Filter States
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [typeFilter, setTypeFilter] = useState('all'); // all | income | expense
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('allTime');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
+  const [datePreset, setDatePreset] = useState('allTime');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+  const [minAmountFilter, setMinAmountFilter] = useState('');
+  const [maxAmountFilter, setMaxAmountFilter] = useState('');
   const [sortBy, setSortBy] = useState('dateNewest');
+
+  // UI state for filter drawer / expansion
+  const [showAdvancedBar, setShowAdvancedBar] = useState(false);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
   // Modal States
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
@@ -57,41 +76,53 @@ export const TransactionsPage = () => {
 
     return transactions
       .filter((tx) => {
+        // Search
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
           const matchTitle = (tx.title || '').toLowerCase().includes(q);
           const matchDesc = (tx.description || '').toLowerCase().includes(q);
           const matchCat = (tx.category || '').toLowerCase().includes(q);
-          if (!matchTitle && !matchDesc && !matchCat) return false;
+          const matchMethod = (tx.paymentMethod || '').toLowerCase().includes(q);
+          if (!matchTitle && !matchDesc && !matchCat && !matchMethod) return false;
         }
 
+        // Type
         if (typeFilter !== 'all' && tx.type !== typeFilter) {
           return false;
         }
 
+        // Category
         if (categoryFilter !== 'all' && tx.category !== categoryFilter) {
           return false;
         }
 
-        if (dateFilter !== 'allTime') {
+        // Payment Method
+        if (paymentMethodFilter !== 'all') {
+          const method = tx.paymentMethod || 'Other';
+          if (method !== paymentMethodFilter) return false;
+        }
+
+        // Min / Max Amount
+        const amount = Number(tx.amount) || 0;
+        if (minAmountFilter !== '' && amount < Number(minAmountFilter)) return false;
+        if (maxAmountFilter !== '' && amount > Number(maxAmountFilter)) return false;
+
+        // Custom Date Range
+        if (startDateFilter && tx.date < startDateFilter) return false;
+        if (endDateFilter && tx.date > endDateFilter) return false;
+
+        // Date Preset (only if custom date range is not actively set)
+        if (!startDateFilter && !endDateFilter && datePreset !== 'allTime') {
           const txDate = new Date(tx.date);
-          if (dateFilter === 'thisMonth') {
-            if (
-              txDate.getFullYear() !== currentYear ||
-              txDate.getMonth() !== currentMonth
-            )
-              return false;
-          } else if (dateFilter === 'lastMonth') {
+          if (datePreset === 'thisMonth') {
+            if (txDate.getFullYear() !== currentYear || txDate.getMonth() !== currentMonth) return false;
+          } else if (datePreset === 'lastMonth') {
             const lastMonthDate = new Date(currentYear, currentMonth - 1, 1);
-            if (
-              txDate.getFullYear() !== lastMonthDate.getFullYear() ||
-              txDate.getMonth() !== lastMonthDate.getMonth()
-            )
-              return false;
-          } else if (dateFilter === 'last6Months') {
+            if (txDate.getFullYear() !== lastMonthDate.getFullYear() || txDate.getMonth() !== lastMonthDate.getMonth()) return false;
+          } else if (datePreset === 'last6Months') {
             const sixMonthsAgo = new Date(currentYear, currentMonth - 5, 1);
             if (txDate < sixMonthsAgo) return false;
-          } else if (dateFilter === 'thisYear') {
+          } else if (datePreset === 'thisYear') {
             if (txDate.getFullYear() !== currentYear) return false;
           }
         }
@@ -105,7 +136,31 @@ export const TransactionsPage = () => {
         if (sortBy === 'amountLow') return a.amount - b.amount;
         return 0;
       });
-  }, [transactions, searchQuery, typeFilter, categoryFilter, dateFilter, sortBy]);
+  }, [
+    transactions,
+    searchQuery,
+    typeFilter,
+    categoryFilter,
+    paymentMethodFilter,
+    datePreset,
+    startDateFilter,
+    endDateFilter,
+    minAmountFilter,
+    maxAmountFilter,
+    sortBy,
+  ]);
+
+  // Selected Date Transactions for Calendar Day Detail
+  const dayTransactions = useMemo(() => {
+    if (!selectedCalendarDate) return [];
+    return transactions.filter((t) => t.date === selectedCalendarDate);
+  }, [transactions, selectedCalendarDate]);
+
+  const dayTotals = useMemo(() => {
+    const inc = dayTransactions.filter((t) => t.type === 'income').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const exp = dayTransactions.filter((t) => t.type === 'expense').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    return { income: inc, expense: exp, net: inc - exp };
+  }, [dayTransactions]);
 
   const handleOpenAdd = () => {
     setTransactionToEdit(null);
@@ -138,7 +193,12 @@ export const TransactionsPage = () => {
     setSearchQuery('');
     setTypeFilter('all');
     setCategoryFilter('all');
-    setDateFilter('allTime');
+    setPaymentMethodFilter('all');
+    setDatePreset('allTime');
+    setStartDateFilter('');
+    setEndDateFilter('');
+    setMinAmountFilter('');
+    setMaxAmountFilter('');
     setSortBy('dateNewest');
     setSearchParams({});
   };
@@ -147,12 +207,17 @@ export const TransactionsPage = () => {
     searchQuery.trim() !== '' ||
     typeFilter !== 'all' ||
     categoryFilter !== 'all' ||
-    dateFilter !== 'allTime' ||
+    paymentMethodFilter !== 'all' ||
+    datePreset !== 'allTime' ||
+    startDateFilter !== '' ||
+    endDateFilter !== '' ||
+    minAmountFilter !== '' ||
+    maxAmountFilter !== '' ||
     sortBy !== 'dateNewest';
 
   return (
     <div className="space-y-5">
-      {/* Header with Title and Actions */}
+      {/* Header with Title, View Switcher and Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
@@ -164,12 +229,38 @@ export const TransactionsPage = () => {
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* View Switcher Toggle */}
+          <div className="flex items-center p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-subtle font-semibold'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>{t('listView')}</span>
+            </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                viewMode === 'calendar'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-subtle font-semibold'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              <span>{t('calendarView')}</span>
+            </button>
+          </div>
+
           <button
             onClick={handleExportCsv}
             className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-subtle transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-slate-400" />
-            <span>{t('exportCsv')}</span>
+            <span className="hidden sm:inline">{t('exportCsv')}</span>
           </button>
 
           <button
@@ -182,7 +273,7 @@ export const TransactionsPage = () => {
         </div>
       </div>
 
-      {/* Structured Ledger Filter Strip */}
+      {/* Structured Filter Strip (Shown in both views) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-subtle space-y-3">
         <div className="flex flex-col md:flex-row items-center gap-3">
           {/* Segmented Type Control */}
@@ -224,14 +315,14 @@ export const TransactionsPage = () => {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
               type="text"
-              placeholder="Search merchant, notes or category..."
+              placeholder="Search merchant, notes, category or payment method..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-850 rounded-lg border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-slate-400 text-slate-900 dark:text-white"
             />
           </div>
 
-          {/* Dropdown Filters */}
+          {/* Category, Payment Method, and Date Preset Dropdowns */}
           <div className="flex items-center space-x-2 w-full md:w-auto">
             {/* Category Dropdown */}
             <select
@@ -247,178 +338,350 @@ export const TransactionsPage = () => {
               ))}
             </select>
 
-            {/* Date Range Dropdown */}
+            {/* Payment Method Dropdown */}
             <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
+              value={paymentMethodFilter}
+              onChange={(e) => setPaymentMethodFilter(e.target.value)}
               className="flex-1 md:flex-initial px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-300 focus:outline-none"
             >
-              <option value="allTime">{t('allTime')}</option>
-              <option value="thisMonth">{t('thisMonth')}</option>
-              <option value="lastMonth">{t('lastMonth')}</option>
-              <option value="last6Months">{t('last6Months')}</option>
-              <option value="thisYear">{t('thisYear')}</option>
+              <option value="all">All Payment Methods</option>
+              {PAYMENT_METHODS.map((pm) => (
+                <option key={pm} value={pm}>
+                  {pm}
+                </option>
+              ))}
             </select>
 
-            {/* Sort Dropdown */}
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="flex-1 md:flex-initial px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-850 text-slate-700 dark:text-slate-300 focus:outline-none"
+            {/* Advanced Filters Button (Mobile & Desktop toggle) */}
+            <button
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  setIsFilterDrawerOpen(true);
+                } else {
+                  setShowAdvancedBar(!showAdvancedBar);
+                }
+              }}
+              className={`p-1.5 rounded-lg border text-xs font-medium flex items-center space-x-1 transition-colors ${
+                showAdvancedBar || isFilterDrawerOpen || minAmountFilter || maxAmountFilter || startDateFilter || endDateFilter
+                  ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-850'
+              }`}
+              title="More Filters"
             >
-              <option value="dateNewest">Newest first</option>
-              <option value="dateOldest">Oldest first</option>
-              <option value="amountHigh">Highest amount</option>
-              <option value="amountLow">Lowest amount</option>
-            </select>
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t('advancedFilters')}</span>
+            </button>
           </div>
         </div>
 
-        {hasActiveFilters && (
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
-            <span className="text-slate-500 dark:text-slate-400">
-              Showing {filteredTransactions.length} of {transactions.length} entries
-            </span>
-            <button
-              onClick={clearAllFilters}
-              className="flex items-center space-x-1 text-slate-700 dark:text-slate-300 hover:text-slate-900 font-medium"
-            >
-              <X className="w-3 h-3" />
-              <span>Clear filters</span>
-            </button>
+        {/* Expandable Desktop Filter Bar for Amount & Date Ranges */}
+        {showAdvancedBar && (
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('dateFrom')}</label>
+              <input
+                type="date"
+                value={startDateFilter}
+                onChange={(e) => setStartDateFilter(e.target.value)}
+                className="w-full px-2.5 py-1 rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('dateTo')}</label>
+              <input
+                type="date"
+                value={endDateFilter}
+                onChange={(e) => setEndDateFilter(e.target.value)}
+                className="w-full px-2.5 py-1 rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('minAmount')}</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                value={minAmountFilter}
+                onChange={(e) => setMinAmountFilter(e.target.value)}
+                className="w-full px-2.5 py-1 rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">{t('maxAmount')}</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="No limit"
+                value={maxAmountFilter}
+                onChange={(e) => setMaxAmountFilter(e.target.value)}
+                className="w-full px-2.5 py-1 rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white font-mono"
+              />
+            </div>
           </div>
         )}
+
+        {/* Counter and Clear Filters */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
+          <span className="text-slate-500 dark:text-slate-400 font-mono">
+            {t('showingOf')} <span className="font-bold text-slate-800 dark:text-slate-200">{filteredTransactions.length}</span> {t('of')} {transactions.length} {t('entries')}
+          </span>
+          {hasActiveFilters && (
+            <button
+              onClick={clearAllFilters}
+              className="flex items-center space-x-1 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 font-medium transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>{t('clearFilters')}</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Ledger Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-subtle">
-        {filteredTransactions.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="px-5 py-3">Description / Merchant</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-5 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredTransactions.map((tx) => {
-                  const catMeta = CATEGORIES.find((c) => c.id === tx.category);
-                  const catName = catMeta ? t(catMeta.nameKey) : tx.category;
-                  const isIncome = tx.type === 'income';
+      {/* VIEW 1: CALENDAR VIEW */}
+      {viewMode === 'calendar' ? (
+        <div className="space-y-4">
+          <TransactionCalendar
+            selectedDate={selectedCalendarDate}
+            onSelectDate={setSelectedCalendarDate}
+          />
 
-                  return (
-                    <tr
-                      key={tx.id}
-                      className="hover:bg-slate-50/70 dark:hover:bg-slate-850/40 transition-colors"
-                    >
-                      <td className="px-5 py-3.5">
+          {/* Selected Date Detail Panel */}
+          {selectedCalendarDate ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-subtle space-y-3">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                    {t('dailySummary')}: {formatDateDisplay(selectedCalendarDate, language === 'hi' ? 'hi-IN' : 'en-US')}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    {dayTransactions.length} transaction{dayTransactions.length === 1 ? '' : 's'} recorded on this date
+                  </p>
+                </div>
+                <div className="flex items-center space-x-4 text-xs font-mono">
+                  <span className="text-emerald-600 dark:text-emerald-400">
+                    Income: +{formatAmount(dayTotals.income)}
+                  </span>
+                  <span className="text-rose-600 dark:text-rose-400">
+                    Expense: -{formatAmount(dayTotals.expense)}
+                  </span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    Net: {dayTotals.net >= 0 ? '+' : ''}{formatAmount(dayTotals.net)}
+                  </span>
+                </div>
+              </div>
+
+              {dayTransactions.length > 0 ? (
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {dayTransactions.map((tx) => {
+                    const isIncome = tx.type === 'income';
+                    return (
+                      <div key={tx.id} className="py-2.5 flex items-center justify-between text-xs">
                         <div className="flex items-center space-x-2.5">
                           <div
-                            className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 ${
-                              isIncome
-                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
-                                : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
+                            className={`w-6 h-6 rounded flex items-center justify-center ${
+                              isIncome ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
                             }`}
                           >
-                            {isIncome ? (
-                              <ArrowUpRight className="w-3.5 h-3.5" />
-                            ) : (
-                              <Receipt className="w-3 h-3 text-slate-400" />
-                            )}
+                            <ArrowUpRight className="w-3.5 h-3.5" />
                           </div>
                           <div>
-                            <p className="font-semibold text-slate-900 dark:text-slate-100">
-                              {tx.title}
+                            <p className="font-semibold text-slate-900 dark:text-slate-100">{tx.title}</p>
+                            <p className="text-[11px] text-slate-400">
+                              {tx.category} • <span className="text-slate-500 font-medium">{tx.paymentMethod || 'Other'}</span>
+                              {tx.description ? ` • ${tx.description}` : ''}
                             </p>
-                            {tx.description && (
-                              <p className="text-[11px] text-slate-400 line-clamp-1">
-                                {tx.description}
-                              </p>
-                            )}
                           </div>
                         </div>
-                      </td>
-
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                          {catName}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3.5 whitespace-nowrap text-slate-500 dark:text-slate-400 font-mono text-[11px]">
-                        {formatDateDisplay(tx.date, language === 'hi' ? 'hi-IN' : 'en-US')}
-                      </td>
-
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap font-mono font-bold tabular-nums text-sm">
-                        <span
-                          className={
-                            isIncome
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-slate-900 dark:text-slate-100'
-                          }
-                        >
-                          {isIncome ? '+' : '-'}
-                          {formatAmount(tx.amount)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end space-x-1">
-                          <button
-                            onClick={() => handleOpenEdit(tx)}
-                            className="p-1 rounded text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            title={t('edit')}
-                          >
+                        <div className="flex items-center space-x-3">
+                          <span className={`font-mono font-bold ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                            {isIncome ? '+' : '-'}{formatAmount(tx.amount)}
+                          </span>
+                          <button onClick={() => handleOpenEdit(tx)} className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            onClick={() => setTxToDelete(tx)}
-                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-                            title={t('delete')}
-                          >
+                          <button onClick={() => setTxToDelete(tx)} className="p-1 text-slate-400 hover:text-rose-600">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="py-12 px-4 text-center space-y-2">
-            <Receipt className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
-            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-              No transactions found
-            </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-              {hasActiveFilters
-                ? 'Try adjusting your filters or clearing search terms to find what you are looking for.'
-                : 'Add your first transaction to start tracking your income and expenses.'}
-            </p>
-            {hasActiveFilters ? (
-              <button
-                onClick={clearAllFilters}
-                className="mt-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                Clear all filters
-              </button>
-            ) : (
-              <button
-                onClick={handleOpenAdd}
-                className="mt-2 px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold shadow-subtle"
-              >
-                Add first transaction
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-xs text-slate-400">
+                  {t('noTransactionsOnDate')}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-3 text-xs text-slate-400">
+              Click any calendar day to inspect daily cashflow and transactions.
+            </div>
+          )}
+        </div>
+      ) : (
+        /* VIEW 2: LIST / LEDGER VIEW */
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-subtle">
+          {filteredTransactions.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th className="px-5 py-3">Description / Merchant</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3">Payment Method</th>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-5 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredTransactions.map((tx) => {
+                    const catMeta = CATEGORIES.find((c) => c.id === tx.category);
+                    const catName = catMeta ? t(catMeta.nameKey) : tx.category;
+                    const isIncome = tx.type === 'income';
+
+                    return (
+                      <tr
+                        key={tx.id}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-850/40 transition-colors"
+                      >
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center space-x-2.5">
+                            <div
+                              className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 ${
+                                isIncome
+                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                                  : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
+                              }`}
+                            >
+                              {isIncome ? (
+                                <ArrowUpRight className="w-3.5 h-3.5" />
+                              ) : (
+                                <Receipt className="w-3 h-3 text-slate-400" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-900 dark:text-slate-100">
+                                {tx.title}
+                              </p>
+                              {tx.description && (
+                                <p className="text-[11px] text-slate-400 line-clamp-1">
+                                  {tx.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            {catName}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                            {tx.paymentMethod || 'Other'}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3.5 whitespace-nowrap text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                          {formatDateDisplay(tx.date, language === 'hi' ? 'hi-IN' : 'en-US')}
+                        </td>
+
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap font-mono font-bold tabular-nums text-sm">
+                          <span
+                            className={
+                              isIncome
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-slate-900 dark:text-slate-100'
+                            }
+                          >
+                            {isIncome ? '+' : '-'}
+                            {formatAmount(tx.amount)}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end space-x-1">
+                            <button
+                              onClick={() => handleOpenEdit(tx)}
+                              className="p-1 rounded text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                              title={t('edit')}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setTxToDelete(tx)}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                              title={t('delete')}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-12 px-4 text-center space-y-2">
+              <Receipt className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                No transactions found
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                {hasActiveFilters
+                  ? 'Try adjusting your filters or clearing search terms to find what you are looking for.'
+                  : 'Add your first transaction to start tracking your income and expenses.'}
+              </p>
+              {hasActiveFilters ? (
+                <button
+                  onClick={clearAllFilters}
+                  className="mt-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  Clear all filters
+                </button>
+              ) : (
+                <button
+                  onClick={handleOpenAdd}
+                  className="mt-2 px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-semibold shadow-subtle"
+                >
+                  Add first transaction
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Advanced Filter Drawer for Mobile */}
+      <AdvancedFilterDrawer
+        isOpen={isFilterDrawerOpen}
+        onClose={() => setIsFilterDrawerOpen(false)}
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        categoryFilter={categoryFilter}
+        setCategoryFilter={setCategoryFilter}
+        paymentMethodFilter={paymentMethodFilter}
+        setPaymentMethodFilter={setPaymentMethodFilter}
+        startDateFilter={startDateFilter}
+        setStartDateFilter={setStartDateFilter}
+        endDateFilter={endDateFilter}
+        setEndDateFilter={setEndDateFilter}
+        minAmountFilter={minAmountFilter}
+        setMinAmountFilter={setMinAmountFilter}
+        maxAmountFilter={maxAmountFilter}
+        setMaxAmountFilter={setMaxAmountFilter}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onReset={clearAllFilters}
+        totalMatching={filteredTransactions.length}
+        totalCount={transactions.length}
+      />
 
       {/* Add / Edit Transaction Modal */}
       <TransactionModal

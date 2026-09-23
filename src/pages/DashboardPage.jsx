@@ -29,6 +29,7 @@ import { useTheme } from '../context/ThemeContext';
 import { CATEGORIES } from '../constants/initialData';
 import { TransactionModal } from '../components/TransactionModal';
 import { AddSavingsModal } from '../components/AddSavingsModal';
+import { FinancialHealthCard } from '../components/FinancialHealthCard';
 import { formatDateDisplay } from '../utils/formatters';
 
 export const DashboardPage = () => {
@@ -214,6 +215,9 @@ export const DashboardPage = () => {
         </div>
       </div>
 
+      {/* Financial Health Analysis Section */}
+      <FinancialHealthCard />
+
       {/* 3. Two-Column Functional Split: Ledger Activity vs Budget & Goals */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Left: Recent Activity Ledger (2 Cols) */}
@@ -274,6 +278,10 @@ export const DashboardPage = () => {
                           <span>•</span>
                           <span className="font-medium text-slate-500 dark:text-slate-400">
                             {catName}
+                          </span>
+                          <span>•</span>
+                          <span className="text-slate-500 dark:text-slate-400">
+                            {tx.paymentMethod || 'Other'}
                           </span>
                         </div>
                       </div>

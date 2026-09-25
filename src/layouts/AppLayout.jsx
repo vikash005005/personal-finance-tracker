@@ -21,6 +21,7 @@ export const AppLayout = () => {
   const path = location.pathname.replace('/', '') || 'dashboard';
   let titleKey = 'dashboard';
   if (path.startsWith('transactions')) titleKey = 'transactions';
+  else if (path.startsWith('expense-split')) titleKey = 'expenseSplit';
   else if (path.startsWith('recurring')) titleKey = 'recurringTransactions';
   else if (path.startsWith('budget')) titleKey = 'budget';
   else if (path.startsWith('savings-goals')) titleKey = 'savingsGoals';

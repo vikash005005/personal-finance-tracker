@@ -1,9 +1,10 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Search,
   Download,
+  Upload,
   Edit2,
   Trash2,
   ArrowUpRight,
@@ -14,6 +15,7 @@ import {
   List,
   RotateCcw,
   CreditCard,
+  Paperclip,
 } from 'lucide-react';
 import { useFinance } from '../context/FinanceContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -25,6 +27,9 @@ import { TransactionCalendar } from '../components/TransactionCalendar';
 import { AdvancedFilterDrawer } from '../components/AdvancedFilterDrawer';
 import { formatDateDisplay } from '../utils/formatters';
 import { exportTransactionsToCsv } from '../utils/exportCsv';
+import { CsvImportModal } from '../components/CsvImportModal';
+import { ReceiptViewModal } from '../components/ReceiptViewModal';
+import { CalendarDateDetails } from '../components/CalendarDateDetails';
 
 export const TransactionsPage = () => {
   const {
@@ -38,7 +43,9 @@ export const TransactionsPage = () => {
 
   // View Mode: 'list' | 'calendar'
   const [viewMode, setViewMode] = useState('list');
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(
+    () => new Date().toISOString().split('T')[0]
+  );
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
@@ -59,7 +66,10 @@ export const TransactionsPage = () => {
   // Modal States
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState(null);
+  const [modalDefaultDate, setModalDefaultDate] = useState(null);
   const [txToDelete, setTxToDelete] = useState(null);
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
 
   useEffect(() => {
     const urlQuery = searchParams.get('search');
@@ -150,19 +160,10 @@ export const TransactionsPage = () => {
     sortBy,
   ]);
 
-  // Selected Date Transactions for Calendar Day Detail
-  const dayTransactions = useMemo(() => {
-    if (!selectedCalendarDate) return [];
-    return transactions.filter((t) => t.date === selectedCalendarDate);
-  }, [transactions, selectedCalendarDate]);
 
-  const dayTotals = useMemo(() => {
-    const inc = dayTransactions.filter((t) => t.type === 'income').reduce((s, t) => s + (Number(t.amount) || 0), 0);
-    const exp = dayTransactions.filter((t) => t.type === 'expense').reduce((s, t) => s + (Number(t.amount) || 0), 0);
-    return { income: inc, expense: exp, net: inc - exp };
-  }, [dayTransactions]);
 
   const handleOpenAdd = () => {
+    setModalDefaultDate(null);
     setTransactionToEdit(null);
     setIsAddEditOpen(true);
   };
@@ -261,6 +262,14 @@ export const TransactionsPage = () => {
           >
             <Download className="w-3.5 h-3.5 text-slate-400" />
             <span className="hidden sm:inline">{t('exportCsv')}</span>
+          </button>
+
+          <button
+            onClick={() => setIsCsvImportOpen(true)}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-subtle transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5 text-slate-400" />
+            <span className="hidden sm:inline">{t('importCsv')}</span>
           </button>
 
           <button
@@ -439,85 +448,35 @@ export const TransactionsPage = () => {
 
       {/* VIEW 1: CALENDAR VIEW */}
       {viewMode === 'calendar' ? (
-        <div className="space-y-4">
-          <TransactionCalendar
-            selectedDate={selectedCalendarDate}
-            onSelectDate={setSelectedCalendarDate}
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* Left: Monthly Calendar Grid (8 cols on xl, 7 cols on lg) */}
+          <div className="lg:col-span-7 xl:col-span-8">
+            <TransactionCalendar
+              selectedDate={selectedCalendarDate}
+              onSelectDate={(date) => {
+                setSelectedCalendarDate(date);
+                if (window.innerWidth < 1024) {
+                  const el = document.getElementById('calendar-date-details');
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+              }}
+            />
+          </div>
 
-          {/* Selected Date Detail Panel */}
-          {selectedCalendarDate ? (
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-subtle space-y-3">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                    {t('dailySummary')}: {formatDateDisplay(selectedCalendarDate, language === 'hi' ? 'hi-IN' : 'en-US')}
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    {dayTransactions.length} transaction{dayTransactions.length === 1 ? '' : 's'} recorded on this date
-                  </p>
-                </div>
-                <div className="flex items-center space-x-4 text-xs font-mono">
-                  <span className="text-emerald-600 dark:text-emerald-400">
-                    Income: +{formatAmount(dayTotals.income)}
-                  </span>
-                  <span className="text-rose-600 dark:text-rose-400">
-                    Expense: -{formatAmount(dayTotals.expense)}
-                  </span>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    Net: {dayTotals.net >= 0 ? '+' : ''}{formatAmount(dayTotals.net)}
-                  </span>
-                </div>
-              </div>
-
-              {dayTransactions.length > 0 ? (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {dayTransactions.map((tx) => {
-                    const isIncome = tx.type === 'income';
-                    return (
-                      <div key={tx.id} className="py-2.5 flex items-center justify-between text-xs">
-                        <div className="flex items-center space-x-2.5">
-                          <div
-                            className={`w-6 h-6 rounded flex items-center justify-center ${
-                              isIncome ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                            }`}
-                          >
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </div>
-                          <div>
-                            <p className="font-semibold text-slate-900 dark:text-slate-100">{tx.title}</p>
-                            <p className="text-[11px] text-slate-400">
-                              {tx.category} • <span className="text-slate-500 font-medium">{tx.paymentMethod || 'Other'}</span>
-                              {tx.description ? ` • ${tx.description}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <span className={`font-mono font-bold ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                            {isIncome ? '+' : '-'}{formatAmount(tx.amount)}
-                          </span>
-                          <button onClick={() => handleOpenEdit(tx)} className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => setTxToDelete(tx)} className="p-1 text-slate-400 hover:text-rose-600">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-6 text-center text-xs text-slate-400">
-                  {t('noTransactionsOnDate')}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-3 text-xs text-slate-400">
-              Click any calendar day to inspect daily cashflow and transactions.
-            </div>
-          )}
+          {/* Right: Date Details Panel (Sticky side panel on desktop, full-width section below on mobile) */}
+          <div className="lg:col-span-5 xl:col-span-4 sticky top-20" id="calendar-date-details">
+            <CalendarDateDetails
+              selectedDate={selectedCalendarDate}
+              onAddTransaction={(date) => {
+                setModalDefaultDate(date);
+                setTransactionToEdit(null);
+                setIsAddEditOpen(true);
+              }}
+              onEditTransaction={handleOpenEdit}
+              onDeleteTransaction={(tx) => setTxToDelete(tx)}
+              onViewReceipt={(receiptData) => setSelectedReceipt(receiptData)}
+            />
+          </div>
         </div>
       ) : (
         /* VIEW 2: LIST / LEDGER VIEW */
@@ -605,6 +564,20 @@ export const TransactionsPage = () => {
 
                         <td className="px-4 py-3.5 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end space-x-1">
+                            {tx.receiptUrl && (
+                              <button
+                                onClick={() => setSelectedReceipt({
+                                  url: tx.receiptUrl,
+                                  title: tx.title,
+                                  date: tx.date,
+                                  amount: tx.amount,
+                                })}
+                                className="p-1 rounded text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                title={t('viewReceipt')}
+                              >
+                                <Paperclip className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={() => handleOpenEdit(tx)}
                               className="p-1 rounded text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -688,6 +661,7 @@ export const TransactionsPage = () => {
         isOpen={isAddEditOpen}
         onClose={() => setIsAddEditOpen(false)}
         transactionToEdit={transactionToEdit}
+        defaultDate={modalDefaultDate}
       />
 
       {/* Delete Confirmation */}
@@ -699,6 +673,22 @@ export const TransactionsPage = () => {
         message={t('confirmDeleteTx')}
         confirmText={t('delete')}
         isDestructive={true}
+      />
+
+      {/* CSV Import Modal */}
+      <CsvImportModal
+        isOpen={isCsvImportOpen}
+        onClose={() => setIsCsvImportOpen(false)}
+      />
+
+      {/* Receipt View Modal */}
+      <ReceiptViewModal
+        isOpen={!!selectedReceipt}
+        onClose={() => setSelectedReceipt(null)}
+        receiptUrl={selectedReceipt?.url}
+        transactionTitle={selectedReceipt?.title}
+        date={selectedReceipt?.date}
+        amount={selectedReceipt?.amount}
       />
     </div>
   );

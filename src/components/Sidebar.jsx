@@ -7,6 +7,7 @@ import {
   Target,
   BarChart3,
   Repeat,
+  Users,
   Settings,
   LogOut,
   X,
@@ -23,6 +24,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
   const mainNav = [
     { name: t('dashboard'), href: '/dashboard', icon: LayoutDashboard },
     { name: t('transactions'), href: '/transactions', icon: Receipt },
+    { name: t('expenseSplit'), href: '/expense-split', icon: Users },
     { name: t('recurringTransactions'), href: '/recurring', icon: Repeat },
     { name: t('budget'), href: '/budget', icon: PieChart },
     { name: t('savingsGoals'), href: '/savings-goals', icon: Target },

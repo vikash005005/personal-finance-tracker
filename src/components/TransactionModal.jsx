@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { CATEGORIES, PAYMENT_METHODS } from '../constants/initialData';
 import { CURRENCIES } from '../constants/currencies';
 import { useLanguage } from '../context/LanguageContext';
 import { useFinance } from '../context/FinanceContext';
 import { useToast } from '../context/ToastContext';
+import { compressImageFile } from '../utils/imageCompressor';
+import { FileImage, Upload, Trash2, RotateCw } from 'lucide-react';
 
 export const TransactionModal = ({
   isOpen,
   onClose,
   transactionToEdit = null,
+  defaultDate = null,
 }) => {
   const { t } = useLanguage();
   const { addTransaction, updateTransaction, addRecurringRule, currency } = useFinance();
@@ -22,10 +25,15 @@ export const TransactionModal = ({
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('UPI');
+  const [receiptUrl, setReceiptUrl] = useState('');
+  const [receiptFileName, setReceiptFileName] = useState('');
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [recurringFreq, setRecurringFreq] = useState('none');
   const [recurringStartDate, setRecurringStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [recurringEndDate, setRecurringEndDate] = useState('');
   const [errors, setErrors] = useState({});
+
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (transactionToEdit) {
@@ -36,6 +44,8 @@ export const TransactionModal = ({
       setDate(transactionToEdit.date || new Date().toISOString().split('T')[0]);
       setDescription(transactionToEdit.description || '');
       setPaymentMethod(transactionToEdit.paymentMethod || 'UPI');
+      setReceiptUrl(transactionToEdit.receiptUrl || transactionToEdit.receipt || '');
+      setReceiptFileName('');
       setRecurringFreq('none');
       setRecurringStartDate(transactionToEdit.date || new Date().toISOString().split('T')[0]);
       setRecurringEndDate('');
@@ -44,15 +54,17 @@ export const TransactionModal = ({
       setTitle('');
       setAmount('');
       setCategory('Food');
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(defaultDate || new Date().toISOString().split('T')[0]);
       setDescription('');
       setPaymentMethod('UPI');
+      setReceiptUrl('');
+      setReceiptFileName('');
       setRecurringFreq('none');
-      setRecurringStartDate(new Date().toISOString().split('T')[0]);
+      setRecurringStartDate(defaultDate || new Date().toISOString().split('T')[0]);
       setRecurringEndDate('');
     }
     setErrors({});
-  }, [transactionToEdit, isOpen]);
+  }, [transactionToEdit, isOpen, defaultDate]);
 
   const handleTypeChange = (newType) => {
     setType(newType);
@@ -61,6 +73,35 @@ export const TransactionModal = ({
     } else if (newType === 'expense' && (category === 'Salary' || category === 'Freelancing' || category === 'Investments')) {
       setCategory('Food');
     }
+  };
+
+  const handleReceiptUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingReceipt(true);
+    try {
+      const res = await compressImageFile(file);
+      setReceiptUrl(res.dataUrl);
+      setReceiptFileName(res.fileName);
+      showToast(t('receiptAttached'), 'success');
+    } catch (err) {
+      if (err.message === 'INVALID_TYPE') {
+        showToast(t('receiptFormatError'), 'error');
+      } else if (err.message === 'FILE_TOO_LARGE') {
+        showToast(t('receiptTooLarge'), 'error');
+      } else {
+        showToast(t('receiptStorageError'), 'error');
+      }
+    } finally {
+      setIsUploadingReceipt(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveReceipt = () => {
+    setReceiptUrl('');
+    setReceiptFileName('');
   };
 
   const validate = () => {
@@ -84,6 +125,8 @@ export const TransactionModal = ({
       date,
       description: description.trim(),
       paymentMethod,
+      receiptUrl: receiptUrl || null,
+      time: transactionToEdit?.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
     if (transactionToEdit) {
@@ -255,6 +298,73 @@ export const TransactionModal = ({
             placeholder="UPI reference, payment purpose, or invoice number..."
             className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400"
           />
+        </div>
+
+        {/* Receipt Attachment Section */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/jpeg,image/png,image/webp,image/jpg"
+            onChange={handleReceiptUpload}
+            className="hidden"
+          />
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+              {t('receipt')}
+            </label>
+            <span className="text-[10px] text-slate-400">JPG, PNG, WEBP (max 5MB)</span>
+          </div>
+
+          {receiptUrl ? (
+            <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
+              <div className="flex items-center space-x-2.5 min-w-0">
+                <img
+                  src={receiptUrl}
+                  alt="Receipt thumbnail"
+                  className="w-9 h-9 object-cover rounded border border-slate-200 dark:border-slate-700 flex-shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+                    {receiptFileName || t('receiptAttached')}
+                  </p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
+                    Attached & ready
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-1 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingReceipt}
+                  className="inline-flex items-center space-x-1 px-2 py-1 text-[11px] font-medium rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
+                >
+                  <RotateCw className="w-3 h-3 text-slate-400" />
+                  <span>{t('replaceReceipt')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRemoveReceipt}
+                  className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                  title={t('removeReceipt')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingReceipt}
+              className="w-full flex items-center justify-center space-x-1.5 py-2 px-3 border border-dashed border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-850/50 transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>{isUploadingReceipt ? t('loading') : t('uploadReceipt')}</span>
+            </button>
+          )}
         </div>
 
         {/* Recurring Transaction Section */}
